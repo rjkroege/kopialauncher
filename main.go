@@ -9,8 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-	"os/user"
-	"io/ioutil"
 )
 
 const (
@@ -23,13 +21,19 @@ const (
 	ERR_NO_KOPIA 
 	ERR_NO_UNMOUNT
 	ERR_BAD_LOGGING
+	ERR_BAD_ENV
 	SNAPSHOT = "/tmp/snapshot"
 )
 
+// setupLogging configures the Go logger to write log messages to the "standard"
+// place on MacOS.
+// TODO(rjk): Figure out if I have to roll these myself or if MacOS will roll them for
+// me.
+// TODO(rjk): Generalize to more than Darwin
 func setupLogging() error {
+	// Based on how Kopia organizes its logs.
 	logFileName := fmt.Sprintf("%v-%v-%v%v", "kopialauncher", time.Now().Format("20060102-150405"), os.Getpid(),  ".log")
 
-	// TODO(rjk): Consider generalizing for more than darwin
 	logDir :=  filepath.Join(os.Getenv("HOME"), "Library", "Logs", "kopialauncher" )
 
 	if err := os.MkdirAll(logDir, 0755); err != nil {
@@ -46,6 +50,7 @@ func setupLogging() error {
 	return nil	
 }
 
+// Dump the log to the console instead with this flag.
 var consolelog = flag.Bool("log", false, "log to console")
 
 func main() {
@@ -58,47 +63,28 @@ func main() {
 		}
 	}
 
-	// Test errors..
+	// Demonstrate that we log things.
 	log.Println("Running kopialauncher")
 
-	// Test how Oauth library fetches creds.
-	// this is right.
-	log.Println("fetch dir", guessUnixHomeDir())
-	credfile := filepath.Join(guessUnixHomeDir(), ".config", "gcloud", "application_default_credentials.json")
-	bah, err := ioutil.ReadFile(credfile)
-	if err != nil {
-		log.Println("can't read credfile", err)
+	// 0. Verify that we have a credentials file so that Kopia can access GCS.
+	gac := os.ExpandEnv("$GOOGLE_APPLICATION_CREDENTIALS")
+	if gac == "" {
+		log.Println("GOOGLE_APPLICATION_CREDENTIALS not defined")
+		os.Exit(ERR_BAD_ENV);
 	}
-	log.Println("creds:", string(bah))
-// ---------- essay ----------
-
-/*
-so, I don't really know how it successfully gets credentials when running normally.
-So, step one is to figure out kopia finds creds when running normally...
-
-There's something about being invoked by launchagent
-
-Yup. 
-
-; env | grep -i cred
-GOOGLE_APPLICATION_CREDENTIALS=/Users/rjkroege/.ssh/gubaidulina.json
-
-No environment.
-So, shove this into the env?
-*/
-
-// ------------------------
-	
+	if fi, err := os.Stat(gac); err != nil || !fi.Mode().IsRegular() {
+		log.Println("GOOGLE_APPLICATION_CREDENTIALS needs to point at an accessible credentials file")
+		os.Exit(ERR_BAD_ENV);
+	}
 
 	// 1. APFS snapshot
-
 	tmutilsnapcmd := exec.Command("/usr/bin/tmutil", "localsnapshot")
 	if err := tmutilsnapcmd.Run(); err != nil {
 		log.Println("kopialauncher can't run tmutil localsnapshot", err)
 		os.Exit(ERR_NO_SNAPSHOT);
 	}
 
-// TODO(rjk): stop here if there is no network access or on battery power.
+// TODO(rjk): stop here if there is no network access.
 
 	// 2. Mount and find last one
 	tmutillistcmd := exec.Command("/usr/bin/tmutil", "listlocalsnapshots", "/System/Volumes/Data")
@@ -138,12 +124,12 @@ So, shove this into the env?
 	}
 
 	// 3. Run Kopia proper
-	// TODO(rjk): get the homedir better-like
-	// How do I know the home directory in a launch script?
 	log.Println("About to run kopia")
 	kopia := exec.Command("/usr/local/bin/kopia", "snapshot", "create", filepath.Join( SNAPSHOT, "/Users/rjkroege"))
 	// Env should come from the plist file?
-	kopia.Env = append(kopia.Env, "GOOGLE_APPLICATION_CREDENTIALS=/Users/rjkroege/.ssh/gubaidulina.json", "HOME=/Users/rjkroege")
+	// kopia.Env = append(kopia.Env, "GOOGLE_APPLICATION_CREDENTIALS=/Users/rjkroege/.ssh/gubaidulina.json", "HOME=/Users/rjkroege")
+
+	// TODO(rjk): Stop collecting spew when I'm confidant that this works.
 	spew, err := kopia.CombinedOutput()
 	if err := kopia.Run(); err != nil {
 		log.Println("kopialauncher can't run kopia", err, "spew:", string(spew))
@@ -157,22 +143,8 @@ So, shove this into the env?
 		log.Println("kopialauncher can't unmount" , SNAPSHOT, "because:" , err)
 		os.Exit(ERR_NO_UNMOUNT);
 	}
+	log.Println("All done")
 
 	// 4. APFS snapshot unmount
 	os.Exit(SUCCESSS)
-}
-
-
-
-// --------- debugging -------------
-func guessUnixHomeDir() string {
-	// Prefer $HOME over user.Current due to glibc bug: golang.org/issue/13470
-	if v := os.Getenv("HOME"); v != "" {
-		return v
-	}
-	// Else, fall back to user.Current:
-	if u, err := user.Current(); err == nil {
-		return u.HomeDir
-	}
-	return ""
 }
