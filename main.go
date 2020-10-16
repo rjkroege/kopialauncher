@@ -5,8 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os/exec"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 )
@@ -14,11 +14,11 @@ import (
 const (
 	SUCCESSS = iota
 	ERR_NO_SNAPSHOT
-	ERR_NO_LIST 
-	ERR_NO_SPLIT_LIST 
-	ERR_NO_DIR 
-	ERR_NO_MOUNT 
-	ERR_NO_KOPIA 
+	ERR_NO_LIST
+	ERR_NO_SPLIT_LIST
+	ERR_NO_DIR
+	ERR_NO_MOUNT
+	ERR_NO_KOPIA
 	ERR_NO_UNMOUNT
 	ERR_BAD_LOGGING
 	ERR_BAD_ENV
@@ -32,9 +32,9 @@ const (
 // TODO(rjk): Generalize to more than Darwin
 func setupLogging() error {
 	// Based on how Kopia organizes its logs.
-	logFileName := fmt.Sprintf("%v-%v-%v%v", "kopialauncher", time.Now().Format("20060102-150405"), os.Getpid(),  ".log")
+	logFileName := fmt.Sprintf("%v-%v-%v%v", "kopialauncher", time.Now().Format("20060102-150405"), os.Getpid(), ".log")
 
-	logDir :=  filepath.Join(os.Getenv("HOME"), "Library", "Logs", "kopialauncher" )
+	logDir := filepath.Join(os.Getenv("HOME"), "Library", "Logs", "kopialauncher")
 
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		return fmt.Errorf("can't make log directory %s: %v", logDir, err)
@@ -44,10 +44,10 @@ func setupLogging() error {
 	fd, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("can't create log file %s: %v", path, err)
-	}		
-	
+	}
+
 	log.SetOutput(fd)
-	return nil	
+	return nil
 }
 
 // Dump the log to the console instead with this flag.
@@ -55,11 +55,11 @@ var consolelog = flag.Bool("log", false, "log to console")
 
 func main() {
 	flag.Parse()
-	
+
 	if !*consolelog {
 		if err := setupLogging(); err != nil {
 			log.Println("kopialauncher:", err)
-			os.Exit(ERR_BAD_LOGGING);
+			os.Exit(ERR_BAD_LOGGING)
 		}
 	}
 
@@ -70,62 +70,61 @@ func main() {
 	gac := os.ExpandEnv("$GOOGLE_APPLICATION_CREDENTIALS")
 	if gac == "" {
 		log.Println("GOOGLE_APPLICATION_CREDENTIALS not defined")
-		os.Exit(ERR_BAD_ENV);
+		os.Exit(ERR_BAD_ENV)
 	}
 	if fi, err := os.Stat(gac); err != nil || !fi.Mode().IsRegular() {
 		log.Println("GOOGLE_APPLICATION_CREDENTIALS needs to point at an accessible credentials file")
-		os.Exit(ERR_BAD_ENV);
+		os.Exit(ERR_BAD_ENV)
 	}
 
 	// 1. APFS snapshot
 	tmutilsnapcmd := exec.Command("/usr/bin/tmutil", "localsnapshot")
 	if err := tmutilsnapcmd.Run(); err != nil {
 		log.Println("kopialauncher can't run tmutil localsnapshot", err)
-		os.Exit(ERR_NO_SNAPSHOT);
+		os.Exit(ERR_NO_SNAPSHOT)
 	}
 
-// TODO(rjk): stop here if there is no network access.
+	// TODO(rjk): stop here if there is no network access.
 
 	// 2. Mount and find last one
 	tmutillistcmd := exec.Command("/usr/bin/tmutil", "listlocalsnapshots", "/System/Volumes/Data")
 	out, err := tmutillistcmd.Output()
 	if err != nil {
 		log.Println("kopialauncher can't run tmutil listlocalsnapshots:", err, "output:", string(out))
-		os.Exit(ERR_NO_LIST);
+		os.Exit(ERR_NO_LIST)
 	}
 
 	snapshots := bytes.Split(out, []byte("\n"))
 	if len(snapshots) < 2 {
-		log.Println("kopialauncher no splittable snapshot list?",  "output:", string(out))
-		os.Exit(ERR_NO_SPLIT_LIST);
+		log.Println("kopialauncher no splittable snapshot list?", "output:", string(out))
+		os.Exit(ERR_NO_SPLIT_LIST)
 	}
 
 	// Last split result is an empty line.
 	lastsnap := string(snapshots[len(snapshots)-2])
 	log.Println("last snapshot: ", lastsnap)
 
-
 	if err := os.MkdirAll(SNAPSHOT, 0700); err != nil {
-		log.Println("kopialauncher can't make: ", SNAPSHOT , "because:", err)
-		os.Exit(ERR_NO_DIR);
+		log.Println("kopialauncher can't make: ", SNAPSHOT, "because:", err)
+		os.Exit(ERR_NO_DIR)
 	}
-	
+
 	// We might have already mounted something. Try unmounting.
 	// This should fail if we're already doing a backup?
-	unmount := exec.Command("/usr/sbin/diskutil", "unmount", SNAPSHOT )
+	unmount := exec.Command("/usr/sbin/diskutil", "unmount", SNAPSHOT)
 	if err := unmount.Run(); err != nil {
 		log.Println("kopialauncher can't unmount. Probably because we're not mounted", err)
 	}
 
-	mount := exec.Command("/sbin/mount", "-t", "apfs", "-r", "-o", "-s=" + lastsnap, "/System/Volumes/Data", SNAPSHOT)
+	mount := exec.Command("/sbin/mount", "-t", "apfs", "-r", "-o", "-s="+lastsnap, "/System/Volumes/Data", SNAPSHOT)
 	if err := mount.Run(); err != nil {
 		log.Println("kopialauncher can't mount", err)
-		os.Exit(ERR_NO_MOUNT);
+		os.Exit(ERR_NO_MOUNT)
 	}
 
 	// 3. Run Kopia proper
 	log.Println("About to run kopia")
-	kopia := exec.Command("/usr/local/bin/kopia", "snapshot", "create", filepath.Join( SNAPSHOT, "/Users/rjkroege"))
+	kopia := exec.Command("/usr/local/bin/kopia", "snapshot", "create", filepath.Join(SNAPSHOT, "/Users/rjkroege"))
 	// Env should come from the plist file?
 	// kopia.Env = append(kopia.Env, "GOOGLE_APPLICATION_CREDENTIALS=/Users/rjkroege/.ssh/gubaidulina.json", "HOME=/Users/rjkroege")
 
@@ -133,15 +132,15 @@ func main() {
 	spew, err := kopia.CombinedOutput()
 	if err := kopia.Run(); err != nil {
 		log.Println("kopialauncher can't run kopia", err, "spew:", string(spew))
-		os.Exit(ERR_NO_KOPIA);
+		os.Exit(ERR_NO_KOPIA)
 	}
 	log.Println("Finished running kopia")
 
 	// Try unmounting.
-	unmount = exec.Command("/usr/sbin/diskutil", "unmount", SNAPSHOT )
+	unmount = exec.Command("/usr/sbin/diskutil", "unmount", SNAPSHOT)
 	if err := unmount.Run(); err != nil {
-		log.Println("kopialauncher can't unmount" , SNAPSHOT, "because:" , err)
-		os.Exit(ERR_NO_UNMOUNT);
+		log.Println("kopialauncher can't unmount", SNAPSHOT, "because:", err)
+		os.Exit(ERR_NO_UNMOUNT)
 	}
 	log.Println("All done")
 
