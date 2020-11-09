@@ -15,7 +15,7 @@ const (
 	SUCCESSS = iota
 	ERR_NO_SNAPSHOT
 	ERR_NO_LIST
-	ERR_NO_SPLIT_LIST
+	ERR_NO_SNAP_IN_LIST
 	ERR_NO_DIR
 	ERR_NO_MOUNT
 	ERR_NO_KOPIA
@@ -94,14 +94,20 @@ func main() {
 		os.Exit(ERR_NO_LIST)
 	}
 
+	// The list of snapshots are sorted. timemachine isn't the only source of
+	// snapshots in the tmutil listlocalsnapshots output. We need to pick the
+	// lastest snapshot that was made with tmutil.
+	lastsnap := ""
 	snapshots := bytes.Split(out, []byte("\n"))
-	if len(snapshots) < 2 {
-		log.Println("kopialauncher no splittable snapshot list?", "output:", string(out))
-		os.Exit(ERR_NO_SPLIT_LIST)
+	for i := len(snapshots) - 1; i >= 0; i-- {
+		if bytes.Contains(snapshots[i], []byte("com.apple.TimeMachine")) {
+			lastsnap = string(snapshots[i])
+		}
 	}
-
-	// Last split result is an empty line.
-	lastsnap := string(snapshots[len(snapshots)-2])
+	if lastsnap == "" {
+		log.Println("kopialauncher no timemachine snapshot in list", "output:", string(out))
+		os.Exit(ERR_NO_SNAP_IN_LIST)
+	}
 	log.Println("last snapshot: ", lastsnap)
 
 	if err := os.MkdirAll(SNAPSHOT, 0700); err != nil {
@@ -125,16 +131,13 @@ func main() {
 	// 3. Run Kopia proper
 	log.Println("About to run kopia")
 	kopia := exec.Command("/usr/local/bin/kopia", "snapshot", "create", filepath.Join(SNAPSHOT, "/Users/rjkroege"))
-	// Env should come from the plist file?
-	// kopia.Env = append(kopia.Env, "GOOGLE_APPLICATION_CREDENTIALS=/Users/rjkroege/.ssh/gubaidulina.json", "HOME=/Users/rjkroege")
-
 	// TODO(rjk): Stop collecting spew when I'm confidant that this works.
 	spew, err := kopia.CombinedOutput()
-	if err := kopia.Run(); err != nil {
+	if err != nil {
 		log.Println("kopialauncher can't run kopia", err, "spew:", string(spew))
 		os.Exit(ERR_NO_KOPIA)
 	}
-	log.Println("Finished running kopia")
+	log.Println("Finished running kopia without errors, spew discarded")
 
 	// Try unmounting.
 	unmount = exec.Command("/usr/sbin/diskutil", "unmount", SNAPSHOT)
