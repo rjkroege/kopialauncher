@@ -22,7 +22,8 @@ const (
 	ERR_NO_UNMOUNT
 	ERR_BAD_LOGGING
 	ERR_BAD_ENV
-	SNAPSHOT = "/tmp/snapshot"
+	SNAPSHOT     = "/tmp/snapshot"
+	TMDATELAYOUT = "2006-01-02-150405"
 )
 
 // setupLogging configures the Go logger to write log messages to the "standard"
@@ -97,17 +98,22 @@ func main() {
 	// The list of snapshots are sorted. timemachine isn't the only source of
 	// snapshots in the tmutil listlocalsnapshots output. We need to pick the
 	// lastest snapshot that was made with tmutil.
-	lastsnap := ""
 	snapshots := bytes.Split(out, []byte("\n"))
-	for i := len(snapshots) - 1; i >= 0; i-- {
-		if bytes.Contains(snapshots[i], []byte("com.apple.TimeMachine")) {
-			lastsnap = string(snapshots[i])
+
+	// Apple inverted the order of the tmutil list output in 11.1 beta 2.
+	// Parse it properly.
+	lt := time.Time{}
+	for _, s := range snapshots {
+		if bytes.HasPrefix(s, []byte("com.apple.TimeMachine.")) && bytes.HasSuffix(s, []byte(".local")) {
+			datestring := string(s[len("com.apple.TimeMachine.") : len(s)-len(".local")])
+			// log.Println("> current datestring", datestring)
+			if t, err := time.Parse(TMDATELAYOUT, datestring); err == nil && t.After(lt) {
+				lt = t
+			}
 		}
 	}
-	if lastsnap == "" {
-		log.Println("kopialauncher no timemachine snapshot in list", "output:", string(out))
-		os.Exit(ERR_NO_SNAP_IN_LIST)
-	}
+
+	lastsnap := "com.apple.TimeMachine." + lt.Format(TMDATELAYOUT) + ".local"
 	log.Println("last snapshot: ", lastsnap)
 
 	if err := os.MkdirAll(SNAPSHOT, 0700); err != nil {
