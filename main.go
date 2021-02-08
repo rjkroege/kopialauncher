@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -28,8 +29,6 @@ const (
 
 // setupLogging configures the Go logger to write log messages to the "standard"
 // place on MacOS.
-// TODO(rjk): Figure out if I have to roll these myself or if MacOS will roll them for
-// me.
 // TODO(rjk): Generalize to more than Darwin
 func setupLogging() error {
 	// Based on how Kopia organizes its logs.
@@ -48,6 +47,40 @@ func setupLogging() error {
 	}
 
 	log.SetOutput(fd)
+	return nil
+}
+
+const oneweek = time.Hour * 24 * 7
+
+func rollLogs() {
+	if err := rollOneLog("kopia", oneweek); err != nil {
+		log.Printf("failed to roll kopia logs: %v", err)
+	}
+	if err := rollOneLog("kopialauncher", oneweek); err != nil {
+		log.Printf("failed to roll kopialauncher logs: %v", err)
+	}
+}
+
+func rollOneLog(target string, older time.Duration) error {
+	now := time.Now()
+	logDir := filepath.Join(os.Getenv("HOME"), "Library", "Logs", target)
+	if err := filepath.Walk(logDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !strings.HasPrefix(info.Name(), target) {
+			return nil
+		}
+		if info.Mode().IsRegular() && now.Sub(info.ModTime()) > older {
+			if err := os.Remove(path); err != nil {
+				// This isn't fatal -- we just log this.
+				log.Printf("can't delete old log message %q: %v", path, err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("rollOnLog %q: %v", logDir, err)
+	}
 	return nil
 }
 
@@ -152,6 +185,11 @@ func main() {
 		os.Exit(ERR_NO_UNMOUNT)
 	}
 	log.Println("All done")
+
+	// Roll logs
+	if !*consolelog {
+		rollLogs()
+	}
 
 	// 4. APFS snapshot unmount
 	os.Exit(SUCCESSS)
