@@ -169,7 +169,7 @@ func main() {
 
 	// 3. Run Kopia proper
 	log.Println("About to run kopia")
-	kopia := exec.Command("/usr/local/bin/kopia", "snapshot", "create", filepath.Join(SNAPSHOT, "/Users/rjkroege"))
+	kopia := exec.Command("/usr/local/bin/kopia", "snapshot", "create", filepath.Join(SNAPSHOT, os.Getenv("HOME")))
 	// TODO(rjk): Stop collecting spew when I'm confidant that this works.
 	spew, err := kopia.CombinedOutput()
 	if err != nil {
