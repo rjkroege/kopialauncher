@@ -100,17 +100,6 @@ func main() {
 	// Demonstrate that we log things.
 	log.Println("Running kopialauncher")
 
-	// 0. Verify that we have a credentials file so that Kopia can access GCS.
-	gac := os.ExpandEnv("$GOOGLE_APPLICATION_CREDENTIALS")
-	if gac == "" {
-		log.Println("GOOGLE_APPLICATION_CREDENTIALS not defined")
-		os.Exit(ERR_BAD_ENV)
-	}
-	if fi, err := os.Stat(gac); err != nil || !fi.Mode().IsRegular() {
-		log.Println("GOOGLE_APPLICATION_CREDENTIALS needs to point at an accessible credentials file")
-		os.Exit(ERR_BAD_ENV)
-	}
-
 	// 1. APFS snapshot
 	tmutilsnapcmd := exec.Command("/usr/bin/tmutil", "localsnapshot")
 	if err := tmutilsnapcmd.Run(); err != nil {
