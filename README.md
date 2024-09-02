@@ -11,6 +11,11 @@ Use it from `launchagent` per [this stackoverflow](https://stackoverflow.com/que
 Stick this in `~/Library/LaunchAgents/com.zerowidth.launched.gounodkopia.plist` after replacing
 `YOUR_GCS_CRED_JSON_FILE` and `YOUR_HOME_DIR` with appropriate personalized values.
 
+Note if you (e.g. I) am using the Storj Kopia backend that I ought to
+finish upstreaming, the credentials story is different. Also note that
+the previous GCS credential support needs to come back if you
+want to use GCS as a backing store. I should make it configurable.
+
 ```
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
